@@ -1,69 +1,81 @@
-import cv2 # opencv2 package for python.
-import pafy # pafy allows us to read videos from youtube.
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+import os, sys, time, datetime, random
 import torch
-
-URL = "https://www.youtube.com/watch?v=PNCJQkvALVc"
-
-#URL to parse
-
-
-
-play = pafy.new(self._URL).streams[-1] #'-1' means read the lowest quality of video.
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from torch.autograd import Variableimport matplotlib.pyplot as plt
+import matplotlib.patches as patches
+from PIL import Image
 
 
-assert play is not None # we want to make sure their is a input to read.
+### pretrained stuff
+
+
+config_path='config/yolov3.cfg'
+weights_path='config/yolov3.weights'
+class_path='config/coco.names'
+img_size=416
+conf_thres=0.8
+nms_thres=0.4# Load model and weights
+model = Darknet(config_path, img_size=img_size)
+model.load_weights(weights_path)
+model.cuda()
+model.eval()
+classes = utils.load_classes(class_path)
+Tensor = torch.cuda.FloatTensor
 
 
 
-stream = cv2.VideoCapture(play.url) #create a opencv video stream.
+Video_FILE = "img1.mp4"
+
+vidcap=cv2.VideoCapture(Video_FILE)
+
+cap = cv2.VideoCapture(Video_FILE)
+
+while cap.isOpened():
+
+    ret, frame = cap.read()
+##########
 
 
+    # if frame is read correctly ret is True
+    # setup initial location of window
+    r, h, c, w = 250, 90, 400, 125  # simply hardcoded the values
+    track_window = (c, r, w, h)
+    # set up the ROI for tracking
+    roi = frame[r:r + h, c:c + w]
+    hsv_roi = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+    mask = cv2.inRange(hsv_roi, np.array((0., 60., 32.)), np.array((180., 255., 255.)))
+    roi_hist = cv2.calcHist([hsv_roi], [0], mask, [180], [0, 180])
+    cv2.normalize(roi_hist, roi_hist, 0, 255, cv2.NORM_MINMAX)
 
-# Hub contains other models like FasterRCNN
+    # Setup the termination criteria, either 10 iteration or move by atleast 1 pt
+    term_crit = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 1)
 
-from torch import hub
-model = torch.hub.load( \
-                      'ultralytics/yolov5', \
-                      'yolov5s', \
-                      pretrained = True)
+    if ret == True:
+        hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
+        dst = cv2.calcBackProject([hsv], [0], roi_hist, [0, 180], 1)
 
-"""
-The function below identifies the device which is availabe to make the prediction and uses it to load and infer the frame. Once it has results it will extract the labels and cordinates(Along with scores) for each object detected in the frame.
-"""
-def score_frame(frame, model):
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    model.to(device)
-    frame = [torch.tensor(frame)]
-    results = self.model(frame)
-    labels = results.xyxyn[0][:, -1].numpy()
-    cord = results.xyxyn[0][:, :-1].numpy()
-    return labels, cord
+        # apply meanshift to get the new location
+        ret, track_window = cv2.meanShift(dst, track_window, term_crit)
 
+        # Draw it on image
+        x, y, w, h = track_window
+        img2 = cv2.rectangle(frame, (x, y), (x + w, y + h), 255, 2)
+        cv2.imshow('img2', img2)
 
-"""
-The function below takes the results and the frame as input and plots boxes over all the objects which have a score higer than our threshold.
-"""
-def plot_boxes(self, results, frame):
-    labels, cord = results
-    n = len(labels)
-    x_shape, y_shape = frame.shape[1], frame.shape[0]
-    for i in range(n):
-        row = cord[i]
-        # If score is less than 0.2 we avoid making a prediction.
-        if row[4] < 0.2:
-            continue
-        x1 = int(row[0]*x_shape)
-        y1 = int(row[1]*y_shape)
-        x2 = int(row[2]*x_shape)
-        y2 = int(row[3]*y_shape)
-        bgr = (0, 255, 0) # color of the box
-        classes = self.model.names # Get the name of label index
-        label_font = cv2.FONT_HERSHEY_SIMPLEX #Font for the label.
-        cv2.rectangle(frame, \
-                      (x1, y1), (x2, y2), \
-                       bgr, 2) #Plot the boxes
-        cv2.putText(frame,\
-                    classes[labels[i]], \
-                    (x1, y1), \
-                    label_font, 0.9, bgr, 2) #Put a label over box.
-        return frame
+        k = cv2.waitKey(60) & 0xff
+        if k == 27:
+            break
+        else:
+            cv2.imwrite(chr(k) + ".jpg", img2)
+
+    else:
+        break
+
+cv2.destroyAllWindows()
+cap.release()
